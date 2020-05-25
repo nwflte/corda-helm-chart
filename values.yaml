@@ -1,0 +1,224 @@
+bankname: &bankname banka
+dbusername: &dbusername postgres
+dbpassword: &dbpassword password
+
+apps:
+  cordapp:
+    #repository: corda/corda-zulu-java1.8-4.4
+    repository: blockchaingoa/corda_image_ent_4.4
+    tag: "v1.00"
+    replicaCount: 1
+    database: backend
+  nms:
+    repository: cordite/network-map
+    tag: "latest"
+    replicaCount: 1 
+  pullPolicy: Always
+
+service:
+  cordapp:
+    name: corda-service
+    type: NodePort
+    protocol: TCP
+    externalPort: 10201
+    internalPort: 10201
+  nms:
+    name: nms-service
+    type: NodePort
+    protocol: TCP
+    externalPort: 8080
+    internalPort: 8080
+  rabbitmq:
+    name: rabbitmq-service
+    type: NodePort
+    protocol: TCP
+    externalPort: 5672
+    internalPort: 5672
+
+ingress:
+  cordapp:
+    name: corda-ingress
+    path: /
+    host: corda.octo.com
+    port: 80
+
+#override settings for the postgresql chart
+postgresql:
+  service:
+    port: 5432
+  postgresqlUsername: *dbusername
+  postgresqlPassword: *dbpassword
+  initdbScripts:
+    db-init.sh: |
+      #!/bin/bash
+      set -e
+      set -u
+
+      function create_user_and_database() {
+      local database=$1
+      echo "  Creating user and database '$database'"
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
+          CREATE USER $database WITH PASSWORD 'password';
+          CREATE DATABASE $database;
+          GRANT ALL PRIVILEGES ON DATABASE $database TO $database;
+      EOSQL
+      }
+
+      POSTGRES_MULTIPLE_DATABASES=banka,bankb,centralbank
+
+      if [ -n "$POSTGRES_MULTIPLE_DATABASES" ]; then
+      echo "Multiple database creation requested: $POSTGRES_MULTIPLE_DATABASES"
+      for db in $(echo $POSTGRES_MULTIPLE_DATABASES | tr ',' ' '); do
+        create_user_and_database $db
+      done
+      echo "Multiple databases created"
+      fi
+
+
+rabbitmq:
+  repository: rabbitmq
+  tag: "3-management"
+  replicaCount: 1
+  pullPolicy: IfNotPresent
+
+  rabbitmq:
+    username: guest
+    password: guest
+    defaultVhost: *bankname
+
+
+
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# corda is the Corda specific deployment options
+corda:
+  # node is the options that define how to define the node.conf file which defines how the Corda Node will function
+  node: 
+    # Values that will end up in the node.conf file
+    conf: 
+      # legalName defines the X500 Node identity name. See https://docs.corda.net/node-naming.html#node-naming for more information
+      legalName: "O=BankA,L=London,C=GB"
+      # emailAddress defines the email address of the Node administrator, preferrably an impersonal address (e.g. node-admin@business.com)
+      emailAddress: "test@octo.com"
+      # bridgeTunnelPort defines the port number that the Bridge will connect to the Float on
+      bridgeTunnelPort: 39999
+      # p2pPort defines the port number of inbound connections
+      p2pPort: 80
+      # p2pAddress defines the public facing IP address (domain name recommended) and port number of the Node, in the case of using a Float, this address should correspond to the public IP address of the float
+      p2pAddress: "corda.octo.com"
+      # floatInternalAddress defines the Floats private IP address, that the Bridge will use to set up the Corda Firewall tunnel between the Bridge and the Float
+      floatInternalAddress: "" # Address that the Bridge service will connect to, if empty uses the public p2p address (above)
+      # identityManagerAddress defines the accesspoint for the Identity Manager server (public domain name+port)
+      identityManagerAddress: "nms-service:8080"
+      # networkmapAddress defines the accesspoint for the Network Map server (public domain name+port)
+      networkmapAddress: ""
+      # compatibilityZoneEnabled defines if you are connecting to a compatibility zone rather than using the above identityManagerAddress+networkmapAddress. Set this to true to be able to join Corda Testnet along with compatibilityZoneURL
+      compatibilityZoneEnabled: true
+      # compatibilityZoneURL defines the root address of Corda compatibility zone network management services. For Corda Testnet you can use "https://netmap.testnet.r3.com"
+      compatibilityZoneURL: "nms-service:8080"
+      # networkRootTruststorePassword defines the password with which to unlock the network root truststore file usually named 'networkRootTrustStore.jks'
+      networkRootTruststorePassword: "trustpass"
+      # keystorePassword defines the password with which to unlock the Node keystore file, usually named "nodekeystore.jks". This value will also end up in the "bridge.conf" file
+      keystorePassword: "cordacadevpass"
+      # truststorePassword defines the password with which to unlock the Node truststore file, usually named "truststore.jks". This value will also end up in the "bridge.conf" file
+      truststorePassword: "trustpass"
+      # crlCheckSoftFail defines if CRL failure is a critical error or if we can just fail softly (by logging an error) and continuing
+      crlCheckSoftFail: true
+      # tlsCertCrlDistPoint defines the endpoint for retrieving the CRL (Certificate Revocation List) of the Corda Network, if empty "", not used
+      # Example from Corda Network UAT network: http://crl.uat.corda.network/nodetls.crl
+      tlsCertCrlDistPoint: "" 
+      # tlsCertCrlIssuer defines the X500 name of the trusted CRL issuer of the Corda Network, example from the Corda Network UAT network
+      tlsCertCrlIssuer: "CN=Corda TLS CRL Authority,OU=Corda UAT,O=R3 HoldCo LLC,L=New York,C=US"
+      # devMode defines if Corda Node is running in developer mode or not, this setting should NEVER be enabled in a production setting!
+      devMode: false
+      # ssh defines the SSH access options
+      ssh:
+        # enabled is a boolean value for the above parameter
+        enabled: true
+        # sshdPort is the Node Shell access port. See https://docs.corda.net/shell.html for more information.
+        sshdPort: 2223
+      # rpc defines the RPC options
+      rpc:
+        # port is the RPC endpoint that the user interface will access to direct the CorDapp on the Corda Node
+        port: 30000
+        # adminPort is the RPC admin endpoint that can be used to do administrative tasks on the Corda Node, normally disabled
+        adminPort: 30009
+        # users defines the list of RPC users and the permissions they have. See https://docs.corda.net/clientrpc.html#granting-flow-permissions for more information
+        users:
+        # name defines the name of the RPC user
+        - name: user1
+          # password defines the password for the RPC user
+          password: test
+          # permissions defines the RPC permissions available. See https://docs.corda.net/clientrpc.html?highlight=rpc%20permission#rpc-permissions for more information
+          permissions: ALL
+      # dataSource defines the database options
+      dataSource:
+        # className defines which database to use, empty ("") defines H2
+        className: ""
+        # url defines where to reach the database at. empty ("") defines H2 local database access
+        url: ""
+        # user defines the username for the access to the database
+        user: "user1"
+        # password defines the password for the access to the database
+        password: "test"
+      # monitoring defines the monitoring options
+      monitoring:
+        # enabled is a boolean value for the above parameter
+        enabled: true
+        # port defines the port on which the monitoring information will be available
+        port: 8090
+      # allowDevCorDapps defines if CorDapps that are signed with developer keys will be allowed to load or not (it clears the cordappSignerKeyFingerprintBlacklist if enabled)
+      allowDevCorDapps:
+        # enabled is a boolean value for the above parameter
+        enabled: true
+
+
+# config defines the options that relate to the deployment but not specifically to the Corda Node
+config:
+  cordaVersion: "4.4"
+  # resourceName defines the Kubernetes resource Name that all resources will share (with some added extensions to differentiate the different resources)
+  # Does not need editing unless deploying multiple nodes in the same cluster which should use unique resource names
+  resourceName: "corda-node-1"
+  # dockerImageNode defines the Docker Image we will be deploying for the Corda Node
+  dockerImageNode: "blockchaingoa/corda_image_ent_4.4"
+  # nodeLoadBalancerIP defines the public / private IP address (NOTE: DNS name is not allowed) for the Kubernetes Cluster on which there will be an ingress to the Corda Nodes RPC endpoint
+  nodeLoadBalancerIP: ""
+  # storage defines the Storage options
+  storage:
+    # resourceName defines the Kubernetes resource Name to use for this resource
+    # Does not need editing unless deploying multiple nodes in the same cluster which should use unique resource names
+    resourceName: "storage-1" 
+    # local defines the local storage options, only used if it is enabled
+    local: 
+      # enabled is a boolean value for the above parameter
+      enabled: false
+      # provisioner defines the type of storage being used. See Storage Classes: https://kubernetes.io/docs/concepts/storage/storage-classes/ for more information
+      provisioner: "no-provisioner"
+    # node defines the storage options for the Node information
+    node:
+      # fileShareName defines the volume share name, with which Kubernetes will be able to map the volume to the Deployment
+      # Does not need editing unless deploying multiple nodes in the same cluster which should use unique share names
+      fileShareName: "node-storage"
+      # size specifies the size to reserve for this volume
+      size: "2Gi"
+      # volumeId defines the id of the volume. This is currently only used if either AWS EBS or GCP PD is enabled
+      volumeId: ""
+      # volumeHost defines which EC2 instance the volume is connected to (the value can be found in AWS portal -> EC2 Instances -> Private DNS of the VM). This is currently only used if AWS EBS is enabled
+      volumeHost: ""
+
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

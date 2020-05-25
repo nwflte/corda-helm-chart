@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.service.nms.name }}
+  labels:
+    app: {{ template "nms.name" . }}
+    chart: {{ template "bank-operations.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  type: {{ .Values.service.nms.type }}
+  selector:
+    app: {{ template "nms.name" . }}
+    release: {{ .Release.Name }}
+  ports:
+    - port: {{ .Values.service.nms.externalPort }}
+      targetPort: {{ .Values.service.nms.internalPort }}
+      protocol: {{ .Values.service.nms.protocol }}
+      name: {{ .Values.service.nms.name }}

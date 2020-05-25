@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "nms.name" . }}
+  labels:
+    app: {{ template "nms.name" . }}
+    chart: {{ template "bank-operations.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.apps.nms.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ template "nms.name" . }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "nms.name" . }}
+        release: {{ .Release.Name }}
+    spec:
+      restartPolicy: Always
+      volumes:
+        - name: nms-certs-volume
+          hostPath:
+            path: "/home/naoufal/helm-chart-corda/files/network/nms-keystore/"
+            type: Directory
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ .Values.apps.nms.repository }}:{{ .Values.apps.nms.tag }}
+          imagePullPolicy: {{ .Values.apps.nms.pullPolicy }}
+          env:
+            - name: NMS_STORAGE_TYPE
+              value: file
+            - name: NMS_ROOT_CA_FILE_PATH
+              value: /opt/cordite/certs/root.jks
+          ports:
+            - containerPort: {{ .Values.service.nms.internalPort }}
+          volumeMounts:
+            - mountPath: /opt/cordite/certs/
+              name: nms-certs-volume
+
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+    {{- if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+    {{- end }}
+    {{- if .Values.tolerations }}
+      tolerations:
+{{ toYaml .Values.tolerations | indent 8 }}
+    {{- end }}

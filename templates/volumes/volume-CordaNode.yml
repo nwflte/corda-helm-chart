@@ -1,0 +1,25 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ .Values.config.resourceName }}-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.config.storage.resourceName }}
+  volumeName: {{ .Values.config.resourceName }}-pv-volume
+  resources:
+    requests:
+      storage: {{ .Values.config.storage.node.size }}
+---
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: {{ .Values.config.resourceName }}-pv-volume
+spec:
+  storageClassName: {{ .Values.config.storage.resourceName }}
+  capacity:
+    storage: {{ .Values.config.storage.node.size }}
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/home/naoufal/corda-kube-data"
